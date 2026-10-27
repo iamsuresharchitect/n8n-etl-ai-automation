@@ -1,0 +1,186 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "File Upload",
+        "formDescription": "Upload the student data",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "File Upload",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -1040,
+        -160
+      ],
+      "id": "d2043f62-4209-4c06-a153-428efdb8cca7",
+      "name": "CSV Upload",
+      "webhookId": "14d81dec-2543-4f2d-a425-6d87aefa3d79"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "File_Upload",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        -816,
+        -160
+      ],
+      "id": "3177d8f8-5a6b-4dc1-ba10-cafe60ed53d3",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Clean this student enrollment row and return ONLY a JSON object.\n\nRow data: {{ JSON.stringify($json) }}\n\nRules:\n- Name: Title Case (Manoj K)\n- Email: if invalid set INVALID_EMAIL\n- Phone: if less than 10 digits set MISSING\n- Course: only Python or Machine Learning or Data Science\n- Fee_Paid: yes/YES = true, no/NO = false\n- City: Title Case, empty = UNKNOWN\n- Enrolled_Date: convert to YYYY-MM-DD\n\nReturn ONLY raw JSON. No explanation. No markdown.",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -592,
+        -160
+      ],
+      "id": "6ae64fb6-a273-4d1d-b6f7-fe3aa8bd206b",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-5",
+          "cachedResultName": "Claude Sonnet 5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        -704,
+        48
+      ],
+      "id": "8bc542e2-6bb0-455e-9f8b-1391118c99fc",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "8nyAs5N0VdEaKmHY",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clean an LLM response string and parse it as JSON\nfunction cleanAndParse(str) {\n  if (typeof str !== 'string') return str;\n\n  let s = str.trim();\n\n  // Remove markdown code fences: ```json ... ``` or ``` ... ```\n  s = s.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n\n  // Some LLMs return literal \"\\n\" text instead of real newlines\n  s = s.replace(/\\\\n/g, ' ');\n\n  // Keep only the part from the first { to the last }\n  const start = s.indexOf('{');\n  const end = s.lastIndexOf('}');\n  if (start !== -1 && end !== -1) {\n    s = s.substring(start, end + 1);\n  }\n\n  return JSON.parse(s);\n}\n\nreturn items.map(item => {\n  let data = item.json;\n\n  try {\n    // The LLM output may sit in different fields\n    const candidates = [data.text, data.output, data.result, data.response];\n    const raw = candidates.find(v => typeof v === 'string');\n\n    if (raw) {\n      data = cleanAndParse(raw);\n    } else if (typeof data === 'string') {\n      data = cleanAndParse(data);\n    }\n\n    // Normalise and validate email\n    const email = String(data.Email || '').trim().toLowerCase();\n    data.Email = email;\n    data.Email_Valid = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);\n\n    return { json: data };\n  } catch (err) {\n    return {\n      json: {\n        error: 'Invalid JSON',\n        message: err.message,\n        raw: item.json\n      }\n    };\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -160
+      ],
+      "id": "0cd61f4a-3353-4a2e-9c42-313f956053f2",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        -160
+      ],
+      "id": "85b3a717-2b60-4383-bb55-0ec2855d0a92",
+      "name": "Convert to File"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CSV Upload": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3f2f26da-61cf-443a-a879-f9d3c515bcff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a2d440ed4abb33374ccb4ef18c6acd74aeba820c38e09814810e10ffc5bf08c4"
+  },
+  "nodeGroups": [],
+  "id": "fiOhOsHDvqzDEv4h",
+  "tags": []
+}
